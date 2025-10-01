@@ -129,65 +129,67 @@ import requests
 app = FastAPI()
 API_KEY = "ZRGuIOOKLritb2NoH9teNXEJ6PKTAdvVPBBwNRS4h0KY9Gk4rXhv3KBzmlG1UxOq"
 
+
 class Location(BaseModel):
     lat: float
     lon: float
     priority: int = 0
     order_id: int = 0
 
+
 class RequestData(BaseModel):
     current_lat: float
     current_lon: float
     locations: list[Location]
 
-def build_distance_matrix(all_points):
-    origins_str = "|".join([f"{p[0]},{p[1]}" for p in all_points])
-    destinations_str = origins_str
-    url = (
-        f"https://api.distancematrix.ai/maps/api/distancematrix/json"
-        f"?origins={origins_str}&destinations={destinations_str}&key={API_KEY}"
-    )
 
+def safe_request(url: str):
+    """Helper to call API safely with error handling"""
     resp = requests.get(url)
-    if resp.status_code != 200:
-        raise Exception(f"API Error: {resp.status_code}")
-
     data = resp.json()
-    if "rows" not in data:
-        raise Exception(f"Invalid response: {data}")
+    if data.get("status") != "OK":
+        raise Exception(f"API error: {data}")
+    return data
 
+
+def build_distance_matrix(all_points):
+    """Build full distance & duration matrices using Distance Matrix API"""
     n = len(all_points)
-    duration_matrix = [[0]*n for _ in range(n)]
-    distance_matrix = [[0]*n for _ in range(n)]
+    duration_matrix = [[0] * n for _ in range(n)]
+    distance_matrix = [[0] * n for _ in range(n)]
 
-    for i, row in enumerate(data["rows"]):
-        for j, elem in enumerate(row["elements"]):
-            if elem["status"] != "OK":
-                duration_matrix[i][j] = 9999999
-                distance_matrix[i][j] = 9999999
-            else:
-                duration_matrix[i][j] = elem["duration"]["value"]
-                distance_matrix[i][j] = elem["distance"]["value"]
+    for i in range(n):
+        origins_str = f"{all_points[i][0]},{all_points[i][1]}"
+        destinations_str = "|".join([f"{p[0]},{p[1]}" for p in all_points])
+
+        url = (
+            f"https://api.distancematrix.ai/maps/api/distancematrix/json"
+            f"?origins={origins_str}&destinations={destinations_str}&key={API_KEY}"
+        )
+
+        data = safe_request(url)
+
+        for j, elem in enumerate(data["rows"][0]["elements"]):
+            if elem.get("status") != "OK":
+                raise Exception(f"Element error: {elem}")
+            duration_matrix[i][j] = elem["duration"]["value"]
+            distance_matrix[i][j] = elem["distance"]["value"]
 
     return duration_matrix, distance_matrix
 
 
-def nearest_neighbor_heuristic(duration_matrix):
-    n = len(duration_matrix)
-    visited = [False] * n
-    visited[0] = True  # origin
+def nearest_neighbor_route(duration_matrix, n):
+    """Nearest Neighbor heuristic to find fast route"""
+    unvisited = set(range(1, n))  # exclude origin (index 0)
     route = []
     current = 0
-    for _ in range(n-1):
-        next_idx = None
-        best_time = float("inf")
-        for j in range(1, n):
-            if not visited[j] and duration_matrix[current][j] < best_time:
-                next_idx = j
-                best_time = duration_matrix[current][j]
+
+    while unvisited:
+        next_idx = min(unvisited, key=lambda j: duration_matrix[current][j])
         route.append(next_idx)
-        visited[next_idx] = True
+        unvisited.remove(next_idx)
         current = next_idx
+
     return route
 
 
@@ -196,20 +198,20 @@ def optimize_route(req: RequestData):
     origin = (req.current_lat, req.current_lon)
     points = [(loc.lat, loc.lon) for loc in req.locations]
     all_points = [origin] + points
+    n = len(all_points)
 
-    # build full matrix (one API call only)
+    # Build distance and duration matrix
     duration_matrix, distance_matrix = build_distance_matrix(all_points)
 
-    # get optimized order (nearest neighbor heuristic)
-    best_order = nearest_neighbor_heuristic(duration_matrix)
+    # Use nearest neighbor instead of brute-force permutations
+    best_order = nearest_neighbor_route(duration_matrix, n)
 
     optimized_route = []
     map_points = []
     prev_idx = 0
-    total_duration = 0
 
     for idx in best_order:
-        loc = req.locations[idx-1]
+        loc = req.locations[idx - 1]  # shift index (0=origin)
         optimized_route.append({
             "order_id": loc.order_id,
             "lat": loc.lat,
@@ -220,19 +222,18 @@ def optimize_route(req: RequestData):
             "distance_from_prev_meters": distance_matrix[prev_idx][idx],
             "duration_from_prev_seconds": duration_matrix[prev_idx][idx]
         })
-
-        total_duration += duration_matrix[prev_idx][idx]
+        prev_idx = idx
 
         map_points.append({
             "order_id": loc.order_id,
             "lat": loc.lat,
             "lon": loc.lon,
-            "distance_text": f"{distance_matrix[prev_idx][idx]/1000:.1f} km",
-            "duration_text": f"{duration_matrix[prev_idx][idx]//60} mins",
-            "duration_value": duration_matrix[prev_idx][idx]
+            "distance_text": f"{distance_matrix[0][idx]/1000:.1f} km",
+            "duration_text": f"{duration_matrix[0][idx]//60} mins",
+            "duration_value": duration_matrix[0][idx]
         })
 
-        prev_idx = idx
+    total_duration = sum(r["duration_from_prev_seconds"] for r in optimized_route)
 
     return {
         "origin": {"lat": origin[0], "lon": origin[1]},
@@ -240,6 +241,7 @@ def optimize_route(req: RequestData):
         "map_points": map_points,
         "total_duration_seconds": total_duration
     }
+
 
 # -------------------------------------------------------------------------------------------
 # http://127.0.0.1:8000/docs
