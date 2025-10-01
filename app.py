@@ -1,0 +1,119 @@
+from fastapi import FastAPI
+from pydantic import BaseModel
+import requests
+from itertools import permutations
+
+app = FastAPI()
+API_KEY = "ZRGuIOOKLritb2NoH9teNXEJ6PKTAdvVPBBwNRS4h0KY9Gk4rXhv3KBzmlG1UxOq"
+
+class Location(BaseModel):
+    lat: float
+    lon: float
+    priority: int = 0
+    order_id: int = 0
+
+class RequestData(BaseModel):
+    current_lat: float
+    current_lon: float
+    locations: list[Location]
+
+def get_distance_duration(origin, destinations):
+    dest_str = "|".join([f"{d[0]},{d[1]}" for d in destinations])
+    url = (
+        f"https://api.distancematrix.ai/maps/api/distancematrix/json"
+        f"?origins={origin}&destinations={dest_str}&key={API_KEY}"
+    )
+    resp = requests.get(url)
+    data = resp.json()
+    results = []
+    for elem in data["rows"][0]["elements"]:
+        results.append({
+            "distance_text": elem["distance"]["text"],
+            "duration_text": elem["duration"]["text"],
+            "duration_value": elem["duration"]["value"]
+        })
+    return results
+
+@app.post("/optimize_route")
+def optimize_route(req: RequestData):
+    origin = (req.current_lat, req.current_lon)
+    points = [(loc.lat, loc.lon) for loc in req.locations]
+
+    map_points_data = get_distance_duration(f"{origin[0]},{origin[1]}", points)
+    map_points_dict = {}
+    for loc, info in zip(req.locations, map_points_data):
+        map_points_dict[loc.order_id] = {
+            "lat": loc.lat,
+            "lon": loc.lon,
+            "distance_text": info["distance_text"],
+            "duration_text": info["duration_text"],
+            "duration_value": info["duration_value"]
+        }
+
+    all_points = [origin] + points
+    n = len(all_points)
+    duration_matrix = [[0]*n for _ in range(n)]
+    for i in range(n):
+        origins_str = f"{all_points[i][0]},{all_points[i][1]}"
+        destinations_str = "|".join([f"{p[0]},{p[1]}" for p in all_points])
+        url = (
+            f"https://api.distancematrix.ai/maps/api/distancematrix/json"
+            f"?origins={origins_str}&destinations={destinations_str}&key={API_KEY}"
+        )
+        resp = requests.get(url)
+        data = resp.json()
+        for j, elem in enumerate(data["rows"][0]["elements"]):
+            duration_matrix[i][j] = elem["duration"]["value"]
+
+    loc_indices = list(range(1, n))
+    best_order = None
+    best_total = float("inf")
+    for perm in permutations(loc_indices):
+        total = 0
+        prev = 0
+        for idx in perm:
+            loc_priority = req.locations[idx-1].priority
+            total += duration_matrix[prev][idx] - loc_priority*300
+            prev = idx
+        if total < best_total:
+            best_total = total
+            best_order = perm
+            
+    optimized_route = []
+    map_points = []
+    for idx in best_order:
+        loc = req.locations[idx-1]
+        optimized_route.append({
+            "order_id": loc.order_id,
+            "lat": loc.lat,
+            "lon": loc.lon,
+            "priority": loc.priority,
+            "duration_value": duration_matrix[0][idx]
+        })
+
+        map_points.append(map_points_dict[loc.order_id])
+
+    return {
+        "origin": {"lat": origin[0], "lon": origin[1]},
+        "optimized_route": optimized_route,
+        "map_points": map_points,
+        "total_duration_seconds": best_total
+    }
+
+
+# http://127.0.0.1:8000/docs
+# https://.postman.co/workspace/My-Workspace~e8ae2448-faa4-412d-849b-1df7333cb7a9/request/39145632-1eb335e5-4b2b-4d7c-b5b7-7a7fee86b06b?action=share&creator=39145632
+# https://omaritf.pythonanywhere.com/optimize_route
+
+# body req 
+# ------------------------
+# {
+#   "current_lat": 24.800266666991973,
+#   "current_lon": 46.80583614521882,
+#   "locations": [
+#     { "lat": 24.786157903353768, "lon": 46.77888360194174, "priority": 1, "order_id": 101 },
+#     { "lat": 24.799052305173873, "lon": 46.71311036745888, "priority": 0, "order_id": 102 },
+#     { "lat": 24.76401638240479, "lon": 46.78853360940482, "priority": 0, "order_id": 103 },
+#     { "lat": 24.741313967915147, "lon": 46.65880775252222, "priority": 1, "order_id": 104 }
+#   ]
+# }
