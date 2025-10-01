@@ -103,7 +103,16 @@ def optimize_route(req: RequestData):
         })
         prev_idx = idx
 
-        map_points.append(map_points_dict[loc.order_id])
+        info = map_points_dict[loc.order_id]
+        map_points.append({
+            "order_id": loc.order_id,
+            "lat": info["lat"],
+            "lon": info["lon"],
+            "distance_text": info["distance_text"],
+            "duration_text": info["duration_text"],
+            "duration_value": info["duration_value"]
+        })
+
 
     return {
         "origin": {"lat": origin[0], "lon": origin[1]},
