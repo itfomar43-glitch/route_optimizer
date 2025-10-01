@@ -4,3 +4,18 @@ git add .
 git commit -m "initial commit"
 git remote add origin https://github.com/<username>/<repo-name>.git
 git push -u origin master
+
+
+
+ادخل فولدر المشروع:
+أضف كل التعديلات:
+
+git add .
+
+اعمل Commit بالتعديلات:
+
+git commit -m "رسالة توضح التعديل"
+
+ادفع التعديلات على GitHub:
+
+git push origin master
