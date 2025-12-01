@@ -127,7 +127,7 @@ from pydantic import BaseModel
 import requests
 
 app = FastAPI()
-API_KEY = "ZRGuIOOKLritb2NoH9teNXEJ6PKTAdvVPBBwNRS4h0KY9Gk4rXhv3KBzmlG1UxOq"
+API_KEY = "fiOSKTS4IE3bZunGwxoucOFCkHp9Mky5vqFwyM9GBY3KYZ7V19OtvqXBT701ta1Y"
 
 
 class Location(BaseModel):

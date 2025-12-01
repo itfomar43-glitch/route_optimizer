@@ -1,0 +1,39 @@
+https://route-optimizer-twcl.onrender.com/docs#/default/optimize_route_optimize_route_post
+
+
+{
+   "current_lat":24.800266666991973,
+   "current_lon":46.80583614521882,
+   "locations":[
+      {
+         "lat":24.722526,
+         "lon":46.836255,
+         "priority":0,
+         "order_id":1
+      },
+      {
+         "lat":24.66426,
+         "lon":46.795227,
+         "priority":0,
+         "order_id":2
+      },
+      {
+         "lat":24.628428,
+         "lon":46.732271,
+         "priority":0,
+         "order_id":3
+      },
+      {
+         "lat":24.631187,
+         "lon":46.773539,
+         "priority":0,
+         "order_id":21
+      },
+      {
+         "lat":24.62728,
+         "lon":46.693772,
+         "priority":0,
+         "order_id":22
+      }
+   ]
+}
